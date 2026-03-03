@@ -1,22 +1,40 @@
 import sys
 import os
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, 
-                             QLabel, QListView, QAbstractItemView)
-from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QDrag
-from PyQt6.QtCore import Qt, QPoint, QSize, QUrl
+                             QLabel, QListView)
+from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor
+from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer
 
 class FenceWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.drag_pos = QPoint()
+        
+        # Размеры
+        self.full_height = 550
+        self.collapsed_height = 60 
+        
         self.init_ui()
+        
+        # Анимация
+        self.animation = QPropertyAnimation(self, b"minimumHeight")
+        self.animation.setDuration(300)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        # ТАЙМЕР ДЛЯ ПРОВЕРКИ МЫШИ (Решает проблему зависания в развернутом виде)
+        self.check_timer = QTimer()
+        self.check_timer.setInterval(100) # Проверка каждые 100мс
+        self.check_timer.timeout.connect(self.check_mouse_position)
+        self.check_timer.start()
 
     def init_ui(self):
-        self.setFixedSize(400, 550) # Немного увеличим для сетки
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedWidth(400)
+        self.setMinimumHeight(self.collapsed_height)
+        self.setMaximumHeight(self.full_height)
         
-        # Разрешаем окну принимать файлы
+        # Tool — чтобы не было в таскбаре, Frameless — без рамок
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
 
         self.model = QFileSystemModel()
@@ -26,20 +44,13 @@ class FenceWindow(QWidget):
         self.list_view = QListView()
         self.list_view.setModel(self.model)
         self.list_view.setRootIndex(self.model.index(path))
-        
-        # --- НАСТРОЙКА СЕТКИ И ВЫТАСКИВАНИЯ ---
         self.list_view.setViewMode(QListView.ViewMode.IconMode)
         self.list_view.setIconSize(QSize(64, 64))
-        self.list_view.setGridSize(QSize(100, 100)) # Вот она, наша сетка!
+        self.list_view.setGridSize(QSize(100, 100))
         self.list_view.setSpacing(10)
-        self.list_view.setMovement(QListView.Movement.Static)
         
-        # Включаем возможность вытаскивать файлы
-        self.list_view.setDragEnabled(True)
-        self.list_view.setAcceptDrops(True)
-        self.list_view.setDropIndicatorShown(True)
-        self.list_view.setDefaultDropAction(Qt.DropAction.MoveAction)
-        
+        # Отключаем фокус, чтобы не мешать событиям окна
+        self.list_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.list_view.doubleClicked.connect(self.open_file)
 
         self.setStyleSheet("""
@@ -61,58 +72,69 @@ class FenceWindow(QWidget):
                 color: white;
                 outline: none;
             }
-            QListView::item:hover {
-                background-color: rgba(255, 255, 255, 20);
-                border-radius: 10px;
-            }
         """)
 
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         self.container = QWidget()
         self.container.setObjectName("MainFrame")
         c_layout = QVBoxLayout(self.container)
-
         self.label = QLabel("🟦 Моя Сетка Приложений")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
         c_layout.addWidget(self.label)
         c_layout.addWidget(self.list_view)
         layout.addWidget(self.container)
         self.setLayout(layout)
 
+    # --- ГЛАВНАЯ ЛОГИКА ПРОВЕРКИ ---
+    def check_mouse_position(self):
+        # Получаем позицию мыши относительно окна
+        local_pos = self.mapFromGlobal(QCursor.pos())
+        is_over = self.rect().contains(local_pos)
+
+        if is_over and self.height() < self.full_height - 5:
+            # Если мышь наведена, а окно закрыто — открываем
+            self.expand_window()
+        elif not is_over and self.height() > self.collapsed_height + 5:
+            # Если мышь ушла, а окно открыто — закрываем
+            self.collapse_window()
+
+    def expand_window(self):
+        if self.animation.state() != QPropertyAnimation.State.Running:
+            self.animation.stop()
+            self.animation.setEndValue(self.full_height)
+            self.animation.start()
+
+    def collapse_window(self):
+        if self.animation.state() != QPropertyAnimation.State.Running:
+            self.animation.stop()
+            self.animation.setEndValue(self.collapsed_height)
+            self.animation.start()
+
+    # Файловые методы
     def open_file(self, index):
         file_path = self.model.filePath(index)
         QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
 
-    # ПРИЕМ ФАЙЛОВ (Вход в заборчик)
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.accept()
-        else:
-            event.ignore()
+        if event.mimeData().hasUrls(): event.accept()
 
     def dropEvent(self, event):
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         for f in files:
-            file_name = os.path.basename(f)
-            destination = os.path.join(os.getcwd(), file_name)
-            if f != destination: # Чтобы не переименовывать самого себя
-                try:
-                    os.rename(f, destination)
-                except Exception as e:
-                    print(f"Ошибка: {e}")
+            dest = os.path.join(os.getcwd(), os.path.basename(f))
+            if f != dest:
+                try: os.rename(f, dest)
+                except: pass
         event.accept()
 
-    # ПЕРЕМЕЩЕНИЕ ОКНА
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self.drag_pos)
-            event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

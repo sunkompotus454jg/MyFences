@@ -220,7 +220,6 @@ class FenceInstance(QWidget):
         self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_edit.setReadOnly(True)
         self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        # 🌟 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Делаем текст прозрачным для мыши по умолчанию!
         self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         h_layout.addWidget(self.title_edit)
 
@@ -240,8 +239,14 @@ class FenceInstance(QWidget):
         self.list_view.setModel(self.model)
         self.list_view.setRootIndex(self.model.index(self.target_path))
         self.list_view.setViewMode(QListView.ViewMode.IconMode)
-        self.list_view.setIconSize(QSize(72, 72))
-        self.list_view.setGridSize(QSize(110, 110))
+        
+        # 🌟 ОПТИМИЗАЦИЯ И УМЕНЬШЕНИЕ ИКОНОК
+        self.list_view.setIconSize(QSize(48, 48)) # Аккуратные системные иконки
+        self.list_view.setGridSize(QSize(85, 85)) # Более компактная сетка
+        self.list_view.setUniformItemSizes(True)  # КРИТИЧНО: Убирает провисание анимации!
+        self.list_view.setLayoutMode(QListView.LayoutMode.Batched) # Отрисовка пачками для скорости
+        self.list_view.setResizeMode(QListView.ResizeMode.Adjust)
+
         self.list_view.doubleClicked.connect(self.open_file)
         self.list_view.setAcceptDrops(False)
         self.list_view.setMinimumHeight(0)
@@ -268,11 +273,10 @@ class FenceInstance(QWidget):
         self.timer.timeout.connect(self.check_mouse)
         self.timer.start(50)
 
-        # Теперь события принимает вся шапка целиком, включая зону над текстом
         self.header_frame.mousePressEvent = self.h_press
         self.header_frame.mouseMoveEvent = self.h_move
         self.header_frame.mouseReleaseEvent = self.h_release
-        self.header_frame.mouseDoubleClickEvent = self.enable_edit # Двойной клик теперь на шапке
+        self.header_frame.mouseDoubleClickEvent = self.enable_edit 
         
         self.title_edit.returnPressed.connect(self.disable_edit)
         self.title_edit.editingFinished.connect(self.disable_edit)
@@ -495,7 +499,6 @@ class FenceInstance(QWidget):
             self.config["y"] = self.y()
             self.manager.save_config()
 
-    # 🌟 А ВОТ И МАГИЯ: Включаем и выключаем прозрачность текста для мыши
     def enable_edit(self, event):
         self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.title_edit.setReadOnly(False)

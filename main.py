@@ -22,76 +22,131 @@ THEMES = {
     "Red":    {"name": "Красный Неон",    "border": "#ff0055", "bg": "#1c1014", "body": "#26161a"}
 }
 
-# --- КАСТОМНОЕ ОКНО ВВОДА ИМЕНИ ПРЕСЕТА ---
-class CustomNameDialog(QDialog):
-    def __init__(self, parent=None, theme_color="#00d4ff"):
+
+# --- ЕДИНОЕ КАСТОМНОЕ ОКНО СОЗДАНИЯ ТЕМЫ ---
+class CustomThemeDialog(QDialog):
+    def __init__(self, parent=None, default_border="#00d4ff", default_body="#1a1a21"):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(300, 160)
+        self.setFixedSize(380, 350)
         
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         
         self.container = QFrame(self)
+        self.container.setObjectName("MainContainer")
         self.layout.addWidget(self.container)
         
-        # Стилизуем окно в выбранный пользователем цвет
+        # Базовый стиль окна
         self.container.setStyleSheet(f"""
-            QFrame {{
+            QFrame#MainContainer {{
                 background-color: #1a1a21;
-                border: 2px solid {theme_color};
+                border: 2px solid {default_border};
                 border-radius: {BORDER_RADIUS}px;
             }}
-            QLabel {{ color: white; border: none; font-family: 'Segoe UI'; font-size: 14px; font-weight: bold; }}
+            QLabel {{ color: white; border: none; font-family: 'Segoe UI'; font-size: 13px; }}
             QLineEdit {{ 
-                background-color: #141419; 
-                color: {theme_color}; 
-                border: 1px solid {theme_color}; 
-                border-radius: 3px; 
-                padding: 6px; 
-                font-family: 'Segoe UI'; font-size: 14px; font-weight: bold;
+                background-color: #141419; color: white; border: 1px solid #555; 
+                border-radius: 3px; padding: 6px; font-family: 'Segoe UI'; font-size: 13px;
             }}
             QPushButton {{
-                background-color: #141419;
-                color: white;
-                border: 1px solid {theme_color};
-                border-radius: 4px;
-                padding: 6px 15px;
-                font-family: 'Segoe UI'; font-weight: bold;
+                background-color: #141419; color: white; border: 1px solid #555;
+                border-radius: 4px; padding: 6px 15px; font-family: 'Segoe UI';
             }}
-            QPushButton:hover {{ background-color: {theme_color}; color: black; }}
+            QPushButton:hover {{ background-color: {default_border}; color: black; border: 1px solid {default_border}; }}
         """)
         
         c_layout = QVBoxLayout(self.container)
         c_layout.setContentsMargins(20, 20, 20, 20)
-        c_layout.setSpacing(15)
+        c_layout.setSpacing(10)
         
-        self.title_lbl = QLabel("Введите название пресета:")
-        self.title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        c_layout.addWidget(self.title_lbl)
-        
-        self.name_input = QLineEdit()
-        self.name_input.setText("Мой цвет")
-        self.name_input.selectAll() # Сразу выделяем текст для удобного ввода
+        # 1. Имя пресета
+        c_layout.addWidget(QLabel("Название пресета:"))
+        self.name_input = QLineEdit("Мой цвет")
         c_layout.addWidget(self.name_input)
         
+        # 2. Цвет контура
+        c_layout.addWidget(QLabel("Цвет контура/текста (HEX):"))
+        border_layout = QHBoxLayout()
+        self.border_input = QLineEdit(default_border)
+        self.border_btn = QPushButton("🎨")
+        self.border_btn.setFixedSize(32, 30)
+        border_layout.addWidget(self.border_input)
+        border_layout.addWidget(self.border_btn)
+        c_layout.addLayout(border_layout)
+        
+        # 3. Цвет фона
+        c_layout.addWidget(QLabel("Основной цвет фона (HEX):"))
+        body_layout = QHBoxLayout()
+        self.body_input = QLineEdit(default_body)
+        self.body_btn = QPushButton("🎨")
+        self.body_btn.setFixedSize(32, 30)
+        body_layout.addWidget(self.body_input)
+        body_layout.addWidget(self.body_btn)
+        c_layout.addLayout(body_layout)
+
+        # 4. Превью
+        c_layout.addWidget(QLabel("Превью:"))
+        self.preview_frame = QFrame()
+        self.preview_frame.setFixedHeight(40)
+        c_layout.addWidget(self.preview_frame)
+
+        # 5. Кнопки
+        c_layout.addSpacing(10)
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Отмена")
         self.btn_ok = QPushButton("Сохранить")
         btn_layout.addWidget(self.btn_cancel)
         btn_layout.addWidget(self.btn_ok)
-        
         c_layout.addLayout(btn_layout)
+        
+        # Подключения
+        self.border_btn.clicked.connect(lambda: self.pick_color(self.border_input))
+        self.body_btn.clicked.connect(lambda: self.pick_color(self.body_input))
+        self.border_input.textChanged.connect(self.update_preview)
+        self.body_input.textChanged.connect(self.update_preview)
         
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
-        self.name_input.returnPressed.connect(self.accept)
         
         self.drag_pos = None
+        self.update_preview() # Инициализируем превью
+        
+    def pick_color(self, line_edit):
+        color = QColorDialog.getColor(QColor(line_edit.text()), self, "Выберите цвет")
+        if color.isValid():
+            line_edit.setText(color.name())
 
-    def get_name(self):
-        return self.name_input.text().strip() or "Мой цвет"
+    def update_preview(self):
+        border = self.border_input.text().strip()
+        body = self.body_input.text().strip()
+        
+        if QColor(border).isValid() and QColor(body).isValid():
+            bg = QColor(body).darker(110).name()
+            self.preview_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {body};
+                    border: 2px solid {border};
+                    border-radius: {BORDER_RADIUS}px;
+                }}
+            """)
+            # Динамически меняем рамку самого окна диалога
+            self.container.setStyleSheet(self.container.styleSheet().replace(
+                r"border: 2px solid .*", f"border: 2px solid {border};"
+            ))
+
+    def get_theme_data(self):
+        border = self.border_input.text().strip()
+        body = self.body_input.text().strip()
+        name = self.name_input.text().strip() or "Мой цвет"
+        
+        # Защита от невалидного HEX
+        if not QColor(border).isValid(): border = "#00d4ff"
+        if not QColor(body).isValid(): body = "#1a1a21"
+            
+        bg = QColor(body).darker(110).name()
+        return {"name": name, "border": border, "bg": bg, "body": body}
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -196,6 +251,7 @@ class FenceInstance(QWidget):
         h_layout = QHBoxLayout(self.header_frame)
         h_layout.setContentsMargins(15, 0, 15, 0)
         
+        # Название строго по центру, без иконок
         self.title_edit = QLineEdit(self.title)
         self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_edit.setReadOnly(True)
@@ -309,34 +365,21 @@ class FenceInstance(QWidget):
                 }}
             """)
 
-    # --- СОЗДАНИЕ СВОЕГО ПРЕСЕТА ---
+    # --- СОЗДАНИЕ СВОЕГО ПРЕСЕТА ЧЕРЕЗ НОВОЕ ОКНО ---
     def prompt_custom_theme(self, apply_globally=False):
-        border_color = QColorDialog.getColor(title="1/2: Выберите цвет контура и текста")
-        if not border_color.isValid(): return
+        # Получаем текущие цвета, чтобы подставить их как шаблон
+        all_themes = self.manager.get_all_themes()
+        curr = all_themes.get(self.current_theme, THEMES["Blue"])
         
-        body_color = QColorDialog.getColor(title="2/2: Выберите основной цвет фона")
-        if not body_color.isValid(): return
+        dialog = CustomThemeDialog(self, default_border=curr['border'], default_body=curr['body'])
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            theme_data = dialog.get_theme_data()
+            theme_id = self.manager.add_custom_theme(theme_data)
 
-        # ВЫЗЫВАЕМ НАШЕ КАСТОМНОЕ СТИЛЬНОЕ ОКНО
-        dialog = CustomNameDialog(self, border_color.name())
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return # Если нажали Отмена
-            
-        name = dialog.get_name()
-
-        custom_theme_data = {
-            "name": name,
-            "border": border_color.name(),
-            "bg": body_color.darker(110).name(),
-            "body": body_color.name()
-        }
-        
-        theme_id = self.manager.add_custom_theme(custom_theme_data)
-
-        if apply_globally:
-            self.manager.apply_global_theme(theme_id)
-        else:
-            self.apply_theme(theme_id)
+            if apply_globally:
+                self.manager.apply_global_theme(theme_id)
+            else:
+                self.apply_theme(theme_id)
 
     # --- КОНТЕКСТНОЕ МЕНЮ (ПКМ) ---
     def show_context_menu(self, pos):

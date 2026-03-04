@@ -8,7 +8,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_d785fd",
+            "theme": "Custom_199052",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -24,7 +24,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_d785fd",
+            "theme": "Custom_199052",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -40,7 +40,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_d785fd",
+            "theme": "Custom_199052",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -61,6 +61,12 @@
             "border": "#ffffff",
             "bg": "#101010",
             "body": "#121212"
+        },
+        "Custom_199052": {
+            "name": "Miami Sunset",
+            "border": "#ff5e00",
+            "bg": "#180e12",
+            "body": "#1a0f14"
         }
     }
 }

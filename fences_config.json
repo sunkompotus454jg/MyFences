@@ -1,31 +1,53 @@
 {
     "fences": [
         {
-            "id": "fence_1",
-            "title": "🟦 тест 1",
-            "path": "C:\\Users\\KoMpOTiK\\Desktop\\MyFences",
-            "x": 965,
-            "y": 1,
-            "width": 291,
-            "height": 357
-        },
-        {
-            "id": "fence_36af1e",
-            "title": "🟦тест 2",
-            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_36af1e",
-            "x": 434,
-            "y": 1,
-            "width": 530,
-            "height": 524
-        },
-        {
-            "id": "fence_7302f1",
-            "title": "🟦 Новая Сетка",
-            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_7302f1",
-            "x": 1256,
-            "y": 1,
+            "id": "fence_0731ee",
+            "title": "Новая Сетка",
+            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_0731ee",
+            "x": 460,
+            "y": 0,
             "width": 400,
-            "height": 300
+            "height": 300,
+            "theme": "Blue",
+            "custom_colors": {
+                "name": "Свой",
+                "border": "#fcee0a",
+                "bg": "#121418",
+                "body": "#14161a"
+            }
+        },
+        {
+            "id": "fence_4da2be",
+            "title": "Новая Сетка",
+            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_4da2be",
+            "x": 859,
+            "y": 0,
+            "width": 400,
+            "height": 300,
+            "theme": "Blue",
+            "custom_colors": {
+                "name": "Свой",
+                "border": "#fcee0a",
+                "bg": "#121418",
+                "body": "#14161a"
+            }
+        },
+        {
+            "id": "fence_456946",
+            "title": "Новая Сетка",
+            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_456946",
+            "x": 1258,
+            "y": 0,
+            "width": 400,
+            "height": 300,
+            "theme": "Blue",
+            "custom_colors": {
+                "name": "Свой",
+                "border": "#fcee0a",
+                "bg": "#121418",
+                "body": "#14161a"
+            }
         }
-    ]
+    ],
+    "custom_themes": {}
 }

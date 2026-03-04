@@ -4,10 +4,19 @@
             "id": "fence_1",
             "title": "🟦 тест 1",
             "path": "C:\\Users\\KoMpOTiK\\Desktop\\MyFences",
-            "x": 886,
-            "y": 272,
-            "width": 250,
-            "height": 150
+            "x": 932,
+            "y": 3,
+            "width": 291,
+            "height": 357
+        },
+        {
+            "id": "fence_36af1e",
+            "title": "🟦тест 2",
+            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_36af1e",
+            "x": 531,
+            "y": 1,
+            "width": 400,
+            "height": 300
         }
     ]
 }

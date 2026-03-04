@@ -2,28 +2,29 @@ import sys
 import os
 import json
 import shutil
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, 
-                             QLineEdit, QListView, QFrame)
+import uuid
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+                             QLineEdit, QListView, QFrame, QPushButton)
 from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor
 from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 CONFIG_FILE = "fences_config.json"
 
 # --- 1. ПОЛЗУНОК ДЛЯ ИЗМЕНЕНИЯ РАЗМЕРА ---
 class ResizeHandle(QWidget):
-    def __init__(self, parent, instance):
-        super().__init__(parent)
+    def __init__(self, parent_widget, instance):
+        super().__init__(parent_widget)
         self.instance = instance
         self.setFixedSize(20, 20)
-        # Меняем курсор на диагональную стрелочку
         self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-        # Визуально выделяем уголок, чтобы было понятно, за что тянуть
         self.setStyleSheet("""
             background-color: transparent;
-            border-bottom: 3px solid rgba(0, 212, 255, 100);
-            border-right: 3px solid rgba(0, 212, 255, 100);
+            border-bottom: 3px solid rgba(0, 212, 255, 150);
+            border-right: 3px solid rgba(0, 212, 255, 150);
             border-bottom-right-radius: 12px;
         """)
+        self.hide()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -40,43 +41,81 @@ class ResizeHandle(QWidget):
             self.instance.stop_resizing()
             event.accept()
 
+# --- 2. ЕДИНОЕ ОКНО СЕТКИ ---
+class FenceInstance(QWidget):
+    
+    # 🌟 НОВОЕ: Кастомное свойство, которое сжимает сразу И тело, И окно ОС
+    @pyqtProperty(int)
+    def current_body_height(self):
+        return self.body_frame.maximumHeight()
 
-# --- 2. ОКНО С ФАЙЛАМИ ---
-class BodyWindow(QWidget):
-    def __init__(self, instance):
-        super().__init__()
-        self.instance = instance
-        self.header = instance.header
-        self.target_path = instance.target_path
+    @current_body_height.setter
+    def current_body_height(self, value):
+        self.body_frame.setMinimumHeight(value)
+        self.body_frame.setMaximumHeight(value)
+        self.setFixedHeight(55 + value) # 55 - это высота шапки
         
+    def __init__(self, manager, config):
+        super().__init__()
+        self.manager = manager
+        self.config = config
+        
+        self.id = config.get("id", "default")
+        self.title = config.get("title", "🟦 Новая Сетка")
+        self.target_path = config.get("path", os.getcwd())
+        
+        os.makedirs(self.target_path, exist_ok=True)
+
+        self.start_width = config.get("width", 500)
+        self.full_height = config.get("height", 600)
+        start_x = config.get("x", 100)
+        start_y = config.get("y", 100)
+
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
+        
+        self.setFixedWidth(self.start_width)
+        self.setFixedHeight(55) # Стартуем идеально сжатыми
+        self.move(start_x, start_y)
 
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
-        self.container = QFrame()
-        self.container.setObjectName("BodyContainer")
-        main_layout.addWidget(self.container)
+        # --- ШАПКА ---
+        self.header_frame = QFrame()
+        self.header_frame.setFixedHeight(55)
+        self.header_frame.setObjectName("HeaderFrame")
+        
+        h_layout = QHBoxLayout(self.header_frame)
+        h_layout.setContentsMargins(15, 0, 10, 0)
+        
+        self.title_edit = QLineEdit(self.title)
+        self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_edit.setReadOnly(True)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        h_layout.addWidget(self.title_edit)
 
-        self.setStyleSheet("""
-            QFrame#BodyContainer {
-                background-color: #1a1a21; 
-                border: 2px solid #00d4ff;
-                border-top: none;
-                border-bottom-left-radius: 15px;
-                border-bottom-right-radius: 15px;
-            }
-            QListView { background: transparent; border: none; color: white; outline: none; }
-        """)
+        self.delete_btn = QPushButton("✖")
+        self.delete_btn.setFixedSize(24, 24)
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setObjectName("DeleteBtn")
+        self.delete_btn.clicked.connect(self.delete_fence)
+        h_layout.addWidget(self.delete_btn)
 
-        layout = QVBoxLayout(self.container)
-        layout.setContentsMargins(5, 5, 5, 5)
-
+        # --- ТЕЛО ---
+        self.body_frame = QFrame()
+        self.body_frame.setObjectName("BodyFrame")
+        self.body_frame.setMinimumHeight(0)
+        self.body_frame.setMaximumHeight(0)
+        
+        b_layout = QVBoxLayout(self.body_frame)
+        b_layout.setContentsMargins(5, 5, 5, 5)
+        
         self.model = QFileSystemModel()
         self.model.setRootPath(self.target_path)
-
+        
         self.list_view = QListView()
         self.list_view.setModel(self.model)
         self.list_view.setRootIndex(self.model.index(self.target_path))
@@ -84,24 +123,173 @@ class BodyWindow(QWidget):
         self.list_view.setIconSize(QSize(72, 72))
         self.list_view.setGridSize(QSize(110, 110))
         self.list_view.doubleClicked.connect(self.open_file)
-        self.list_view.setAcceptDrops(False) 
-        layout.addWidget(self.list_view)
+        self.list_view.setAcceptDrops(False)
+        self.list_view.setMinimumHeight(0)
+        b_layout.addWidget(self.list_view)
 
-        # Добавляем ползунок изменения размера
-        self.resizer = ResizeHandle(self, self.instance)
+        self.main_layout.addWidget(self.header_frame)
+        self.main_layout.addWidget(self.body_frame)
+
+        # --- СТИЛИЗАЦИЯ ---
+        self.setStyleSheet("""
+            QFrame#BodyFrame {
+                background-color: #1a1a21;
+                border: 2px solid #00d4ff;
+                border-top: none; 
+                border-bottom-left-radius: 12px;
+                border-bottom-right-radius: 12px;
+            }
+            QLineEdit { color: #00d4ff; font-family: 'Segoe UI'; font-size: 16px; font-weight: bold; border: none; background: transparent; }
+            QListView { background: transparent; border: none; color: white; outline: none; }
+            
+            QPushButton#DeleteBtn { background: transparent; color: rgba(255, 255, 255, 100); border: none; font-size: 14px; font-weight: bold; border-radius: 12px; }
+            QPushButton#DeleteBtn:hover { background: rgba(255, 50, 50, 200); color: white; }
+        """)
+        self.set_header_style(expanded=False)
+
+        self.resizer = ResizeHandle(self, self)
+
+        # Анимация теперь привязана к нашему кастомному свойству
+        self.animation = QPropertyAnimation(self, b"current_body_height")
+        self.animation.setDuration(300)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self.drag_pos = None
+        self.resizing = False
+        self.is_expanded = False # Четко отслеживаем состояние
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_mouse)
+        self.timer.start(50)
+
+        self.header_frame.mousePressEvent = self.h_press
+        self.header_frame.mouseMoveEvent = self.h_move
+        self.header_frame.mouseReleaseEvent = self.h_release
+        self.title_edit.mouseDoubleClickEvent = self.enable_edit
+        self.title_edit.returnPressed.connect(self.disable_edit)
+        self.title_edit.editingFinished.connect(self.disable_edit)
+
+        self.show()
+
+    def set_header_style(self, expanded):
+        if expanded:
+            self.header_frame.setStyleSheet("""
+                QFrame#HeaderFrame {
+                    background-color: #141419; border: 2px solid #00d4ff; border-bottom: none;
+                    border-top-left-radius: 12px; border-top-right-radius: 12px;
+                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                }
+            """)
+        else:
+            self.header_frame.setStyleSheet("""
+                QFrame#HeaderFrame { background-color: #141419; border: 2px solid #00d4ff; border-radius: 12px; }
+            """)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Всегда держим ползунок в правом нижнем углу
         self.resizer.move(self.width() - 20, self.height() - 20)
 
-    @pyqtProperty(int)
-    def anim_height(self):
-        return self.height()
+    # 🌟 НОВОЕ: Защищенная логика проверки мыши с жесткими начальными точками
+    def check_mouse(self):
+        if self.title_edit.hasFocus() or self.resizing: return
 
-    @anim_height.setter
-    def anim_height(self, value):
-        self.setFixedHeight(value)
+        mouse = QCursor.pos()
+        over_window = self.geometry().contains(mouse)
+
+        if over_window and not self.is_expanded:
+            self.is_expanded = True
+            self.animation.stop()
+            try: self.animation.finished.disconnect(self.on_collapse_finished)
+            except: pass
+            
+            self.set_header_style(expanded=True)
+            # Жестко задаем, откуда и куда анимировать
+            self.animation.setStartValue(self.current_body_height)
+            self.animation.setEndValue(self.full_height)
+            self.resizer.show()
+            self.animation.start()
+
+        elif not over_window and self.is_expanded:
+            self.is_expanded = False
+            self.animation.stop()
+            self.resizer.hide()
+            
+            # Жестко задаем старт и конец сворачивания
+            self.animation.setStartValue(self.current_body_height)
+            self.animation.setEndValue(0)
+            self.animation.finished.connect(self.on_collapse_finished)
+            self.animation.start()
+
+    def on_collapse_finished(self):
+        try: self.animation.finished.disconnect(self.on_collapse_finished)
+        except: pass
+        if self.current_body_height == 0:
+            self.set_header_style(expanded=False)
+
+    def start_resizing(self, global_pos):
+        self.resizing = True
+        self.resize_start_pos = global_pos
+        self.start_width = self.width()
+        self.start_height = self.full_height
+        self.animation.stop()
+
+    def do_resizing(self, global_pos):
+        if not self.resizing: return
+        delta = global_pos - self.resize_start_pos
+        new_width = max(250, self.start_width + delta.x())
+        new_height = max(150, self.start_height + delta.y())
+        
+        self.setFixedWidth(new_width)
+        self.full_height = new_height
+        self.current_body_height = new_height # Растягиваем окно сразу напрямую
+
+    def stop_resizing(self):
+        self.resizing = False
+        self.config["width"] = self.width()
+        self.config["height"] = self.full_height
+        self.manager.save_config()
+
+    def delete_fence(self):
+        desktop_dir = os.path.expanduser("~\\Desktop")
+        if os.path.exists(self.target_path):
+            for item in os.listdir(self.target_path):
+                src_path = os.path.join(self.target_path, item)
+                try: shutil.move(src_path, desktop_dir)
+                except Exception as e: print(f"Файл {item} занят. ({e})")
+            try: shutil.rmtree(self.target_path)
+            except: pass
+
+        self.manager.config_data["fences"] = [f for f in self.manager.config_data["fences"] if f["id"] != self.id]
+        self.manager.save_config()
+        self.close()
+
+    def h_press(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def h_move(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and not self.title_edit.hasFocus() and self.drag_pos:
+            self.move(event.globalPosition().toPoint() - self.drag_pos)
+
+    def h_release(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.drag_pos:
+            self.drag_pos = None
+            self.config["x"] = self.x()
+            self.config["y"] = self.y()
+            self.manager.save_config()
+
+    def enable_edit(self, event):
+        self.title_edit.setReadOnly(False)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.title_edit.setFocus()
+        self.title_edit.selectAll()
+
+    def disable_edit(self):
+        self.title_edit.setReadOnly(True)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.title_edit.clearFocus()
+        self.config["title"] = self.title_edit.text()
+        self.manager.save_config()
 
     def open_file(self, index):
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(index)))
@@ -126,193 +314,64 @@ class BodyWindow(QWidget):
                     file_name = os.path.basename(src_path)
                     dst_path = os.path.join(self.target_path, file_name)
                     try:
-                        if src_path != dst_path:
-                            shutil.move(src_path, dst_path)
-                    except Exception as e:
-                        print(f"Ошибка перемещения: {e}")
+                        if src_path != dst_path: shutil.move(src_path, dst_path)
+                    except Exception as e: print(f"Ошибка: {e}")
         else: event.ignore()
 
 
-# --- 3. ЭКЗЕМПЛЯР СЕТКИ ---
-class FenceInstance:
-    def __init__(self, manager, config):
-        self.manager = manager
-        self.config = config
-        
-        self.id = config.get("id", "default_1")
-        self.title = config.get("title", "🟦 Новая Сетка")
-        self.target_path = config.get("path", os.getcwd())
-        self.width = config.get("width", 500)
-        self.full_height = config.get("height", 600)
-        start_x = config.get("x", 200)
-        start_y = config.get("y", 200)
-
-        self.drag_pos = None
-        self.resizing = False # Флаг: тянем ли мы сейчас за угол
-
-        # --- ШАПКА ---
-        self.header = QWidget()
-        self.header.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
-        self.header.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.header.setFixedSize(self.width, 55)
-        self.header.move(start_x, start_y)
-        
-        main_h_layout = QVBoxLayout(self.header)
-        main_h_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.header_container = QFrame()
-        self.header_container.setObjectName("HeaderContainer")
-        main_h_layout.addWidget(self.header_container)
-
-        h_layout = QVBoxLayout(self.header_container)
-        h_layout.setContentsMargins(10, 0, 10, 0)
-
-        self.title_edit = QLineEdit(self.title)
-        self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_edit.setReadOnly(True)
-        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        
-        self.header.setStyleSheet("""
-            QFrame#HeaderContainer { background-color: #141419; border: 2px solid #00d4ff; border-radius: 12px; }
-            QLineEdit { color: #00d4ff; font-family: 'Segoe UI'; font-size: 16px; font-weight: bold; border: none; background: transparent; }
-        """)
-        h_layout.addWidget(self.title_edit)
-
-        # --- ТЕЛО ---
-        self.body = BodyWindow(self)
-        self.body.setFixedWidth(self.width)
-        self.body.setFixedHeight(0)
-
-        self.animation = QPropertyAnimation(self.body, b"anim_height")
-        self.animation.setDuration(350)
-        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.sync_and_check)
-        self.timer.start(10)
-
-        # События шапки
-        self.header.mousePressEvent = self.h_press
-        self.header.mouseMoveEvent = self.h_move
-        self.header.mouseReleaseEvent = self.h_release
-        self.title_edit.mouseDoubleClickEvent = self.enable_edit
-        self.title_edit.returnPressed.connect(self.disable_edit)
-        self.title_edit.editingFinished.connect(self.disable_edit)
-
-        self.header.show()
-        self.body.show()
-
-    # --- МЕТОДЫ ИЗМЕНЕНИЯ РАЗМЕРА ---
-    def start_resizing(self, global_pos):
-        self.resizing = True
-        self.resize_start_pos = global_pos
-        self.start_width = self.width
-        self.start_height = self.full_height
-
-    def do_resizing(self, global_pos):
-        if not self.resizing: return
-        delta = global_pos - self.resize_start_pos
-        
-        # Минимальные размеры окна (чтобы не схлопнулось в ноль)
-        new_width = max(250, self.start_width + delta.x())
-        new_height = max(150, self.start_height + delta.y())
-        
-        self.width = new_width
-        self.full_height = new_height
-        
-        # Мгновенно применяем новые размеры к окнам
-        self.header.setFixedSize(self.width, 55)
-        self.body.setFixedWidth(self.width)
-        self.body.setFixedHeight(self.full_height)
-
-    def stop_resizing(self):
-        self.resizing = False
-        # Сохраняем новые размеры в конфигурацию
-        self.config["width"] = self.width
-        self.config["height"] = self.full_height
-        self.manager.save_config()
-
-    # --- МЕТОДЫ ЛОГИКИ ---
-    def sync_and_check(self):
-        self.body.move(self.header.x(), self.header.y() + self.header.height() - 5)
-
-        # Если тянем за угол или редактируем текст — прерываем логику сворачивания
-        if self.title_edit.hasFocus() or self.resizing: return
-
-        mouse = QCursor.pos()
-        over_header = self.header.geometry().contains(mouse)
-        over_body = self.body.geometry().contains(mouse) and self.body.height() > 10
-
-        if over_header or over_body:
-            if self.animation.endValue() != self.full_height:
-                self.animation.stop()
-                self.animation.setEndValue(self.full_height)
-                self.animation.start()
-        else:
-            if self.animation.endValue() != 0:
-                self.animation.stop()
-                self.animation.setEndValue(0)
-                self.animation.start()
-
-    def h_press(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.drag_pos = event.globalPosition().toPoint() - self.header.frameGeometry().topLeft()
-
-    def h_move(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton and not self.title_edit.hasFocus() and self.drag_pos:
-            self.header.move(event.globalPosition().toPoint() - self.drag_pos)
-
-    def h_release(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.drag_pos:
-            self.drag_pos = None
-            self.config["x"] = self.header.x()
-            self.config["y"] = self.header.y()
-            self.manager.save_config() 
-
-    def enable_edit(self, event):
-        self.title_edit.setReadOnly(False)
-        self.title_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.title_edit.setFocus()
-        self.title_edit.selectAll()
-
-    def disable_edit(self):
-        self.title_edit.setReadOnly(True)
-        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.title_edit.clearFocus()
-        self.config["title"] = self.title_edit.text()
-        self.manager.save_config()
-
-
-# --- 4. МЕНЕДЖЕР ---
+# --- 3. МЕНЕДЖЕР ОКНО ---
 class FenceManager:
     def __init__(self):
         self.fences = []
         self.config_data = {"fences": []}
         self.load_config()
 
+        self.server = QLocalServer()
+        self.server.removeServer("MyFencesApp")
+        self.server.listen("MyFencesApp")
+        self.server.newConnection.connect(self.handle_new_connection)
+
+    def handle_new_connection(self):
+        socket = self.server.nextPendingConnection()
+        if socket.waitForReadyRead(1000):
+            message = socket.readAll().data().decode('utf-8')
+            if message == "CREATE_NEW":
+                self.create_new_fence()
+        socket.disconnectFromServer()
+
+    def create_new_fence(self):
+        new_id = f"fence_{uuid.uuid4().hex[:6]}"
+        
+        documents_dir = os.path.expanduser("~/Documents")
+        new_folder_path = os.path.join(documents_dir, "MyFencesData", new_id)
+        os.makedirs(new_folder_path, exist_ok=True)
+
+        new_config = {
+            "id": new_id,
+            "title": "🟦 Новая Сетка",
+            "path": new_folder_path,
+            "x": 100, "y": 100,
+            "width": 400, "height": 300
+        }
+        self.config_data["fences"].append(new_config)
+        self.save_config()
+        
+        fence = FenceInstance(self, new_config)
+        self.fences.append(fence)
+
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     self.config_data = json.load(f)
-            except Exception as e:
-                print(f"Ошибка чтения конфига: {e}")
+            except Exception as e: pass
 
         if not self.config_data.get("fences"):
-            self.config_data["fences"] = [
-                {
-                    "id": "fence_1",
-                    "title": "🟦 Рабочий Стол",
-                    "path": os.getcwd(),
-                    "x": 300, "y": 200,
-                    "width": 500, "height": 600
-                }
-            ]
-            self.save_config()
-
-        for fence_cfg in self.config_data["fences"]:
-            fence = FenceInstance(self, fence_cfg)
-            self.fences.append(fence)
+            self.create_new_fence()
+        else:
+            for fence_cfg in self.config_data["fences"]:
+                fence = FenceInstance(self, fence_cfg)
+                self.fences.append(fence)
 
     def save_config(self):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -321,5 +380,17 @@ class FenceManager:
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    manager = FenceManager()
-    sys.exit(app.exec())
+    
+    socket = QLocalSocket()
+    socket.connectToServer("MyFencesApp")
+    
+    if socket.waitForConnected(500):
+        if "--create" in sys.argv:
+            socket.write(b"CREATE_NEW")
+            socket.waitForBytesWritten(500)
+        sys.exit(0)
+    else:
+        manager = FenceManager()
+        if "--create" in sys.argv and len(manager.fences) > 0:
+            manager.create_new_fence()
+        sys.exit(app.exec())

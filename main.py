@@ -593,8 +593,9 @@ class FenceManager:
     def create_new_fence(self):
         new_id = f"fence_{uuid.uuid4().hex[:6]}"
         
-        documents_dir = os.path.expanduser("~/Documents")
-        new_folder_path = os.path.join(documents_dir, "MyFencesData", new_id)
+       
+        user_dir = os.path.expanduser("~")
+        new_folder_path = os.path.join(user_dir, "MyFencesData", new_id)
         os.makedirs(new_folder_path, exist_ok=True)
 
         new_config = {

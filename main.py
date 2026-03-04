@@ -1,143 +1,210 @@
 import sys
 import os
+import shutil
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, 
-                             QLabel, QListView)
+                             QLineEdit, QListView, QFrame)
 from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor
-from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer
+from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty
 
-class FenceWindow(QWidget):
-    def __init__(self):
+class BodyWindow(QWidget):
+    def __init__(self, parent_header):
         super().__init__()
-        self.drag_pos = QPoint()
-        
-        # Размеры
-        self.full_height = 550
-        self.collapsed_height = 60 
-        
-        self.init_ui()
-        
-        # Анимация
-        self.animation = QPropertyAnimation(self, b"minimumHeight")
-        self.animation.setDuration(300)
-        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        
-        # ТАЙМЕР ДЛЯ ПРОВЕРКИ МЫШИ (Решает проблему зависания в развернутом виде)
-        self.check_timer = QTimer()
-        self.check_timer.setInterval(100) # Проверка каждые 100мс
-        self.check_timer.timeout.connect(self.check_mouse_position)
-        self.check_timer.start()
-
-    def init_ui(self):
-        self.setFixedWidth(400)
-        self.setMinimumHeight(self.collapsed_height)
-        self.setMaximumHeight(self.full_height)
-        
-        # Tool — чтобы не было в таскбаре, Frameless — без рамок
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.header = parent_header
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
         self.setAcceptDrops(True)
 
-        self.model = QFileSystemModel()
-        path = os.getcwd() 
-        self.model.setRootPath(path)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.list_view = QListView()
-        self.list_view.setModel(self.model)
-        self.list_view.setRootIndex(self.model.index(path))
-        self.list_view.setViewMode(QListView.ViewMode.IconMode)
-        self.list_view.setIconSize(QSize(64, 64))
-        self.list_view.setGridSize(QSize(100, 100))
-        self.list_view.setSpacing(10)
-        
-        # Отключаем фокус, чтобы не мешать событиям окна
-        self.list_view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.list_view.doubleClicked.connect(self.open_file)
+        self.container = QFrame()
+        self.container.setObjectName("BodyContainer")
+        main_layout.addWidget(self.container)
 
         self.setStyleSheet("""
-            QWidget#MainFrame {
-                background-color: rgba(20, 20, 25, 230);
-                border: 1px solid rgba(0, 212, 255, 50);
-                border-radius: 20px;
+            QFrame#BodyContainer {
+                background-color: #1a1a21; 
+                border: 2px solid #00d4ff;
+                border-top: none;
+                border-bottom-left-radius: 15px;
+                border-bottom-right-radius: 15px;
             }
-            QLabel {
-                color: #00d4ff;
-                font-family: 'Segoe UI Variable';
-                font-size: 16px;
-                background: transparent;
-                padding: 10px;
-            }
-            QListView {
-                background: transparent;
-                border: none;
-                color: white;
-                outline: none;
+            QListView { 
+                background: transparent; 
+                border: none; 
+                color: white; 
+                outline: none; 
             }
         """)
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.container = QWidget()
-        self.container.setObjectName("MainFrame")
-        c_layout = QVBoxLayout(self.container)
-        self.label = QLabel("🟦 Моя Сетка Приложений")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        c_layout.addWidget(self.label)
-        c_layout.addWidget(self.list_view)
-        layout.addWidget(self.container)
-        self.setLayout(layout)
+        layout = QVBoxLayout(self.container)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-    # --- ГЛАВНАЯ ЛОГИКА ПРОВЕРКИ ---
-    def check_mouse_position(self):
-        # Получаем позицию мыши относительно окна
-        local_pos = self.mapFromGlobal(QCursor.pos())
-        is_over = self.rect().contains(local_pos)
+        self.model = QFileSystemModel()
+        self.target_path = os.getcwd() 
+        self.model.setRootPath(self.target_path)
 
-        if is_over and self.height() < self.full_height - 5:
-            # Если мышь наведена, а окно закрыто — открываем
-            self.expand_window()
-        elif not is_over and self.height() > self.collapsed_height + 5:
-            # Если мышь ушла, а окно открыто — закрываем
-            self.collapse_window()
+        self.list_view = QListView()
+        self.list_view.setModel(self.model)
+        self.list_view.setRootIndex(self.model.index(self.target_path))
+        self.list_view.setViewMode(QListView.ViewMode.IconMode)
+        self.list_view.setIconSize(QSize(72, 72))
+        self.list_view.setGridSize(QSize(110, 110))
+        self.list_view.doubleClicked.connect(self.open_file)
+        
+        self.list_view.setAcceptDrops(False) 
+        layout.addWidget(self.list_view)
 
-    def expand_window(self):
-        if self.animation.state() != QPropertyAnimation.State.Running:
-            self.animation.stop()
-            self.animation.setEndValue(self.full_height)
-            self.animation.start()
+    @pyqtProperty(int)
+    def anim_height(self):
+        return self.height()
 
-    def collapse_window(self):
-        if self.animation.state() != QPropertyAnimation.State.Running:
-            self.animation.stop()
-            self.animation.setEndValue(self.collapsed_height)
-            self.animation.start()
+    @anim_height.setter
+    def anim_height(self, value):
+        self.setFixedHeight(value)
 
-    # Файловые методы
     def open_file(self, index):
-        file_path = self.model.filePath(index)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(index)))
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls(): event.accept()
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        # Меняем курсор на "Перемещение"
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
 
     def dropEvent(self, event):
-        files = [u.toLocalFile() for u in event.mimeData().urls()]
-        for f in files:
-            dest = os.path.join(os.getcwd(), os.path.basename(f))
-            if f != dest:
-                try: os.rename(f, dest)
-                except: pass
-        event.accept()
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+            
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    src_path = url.toLocalFile()
+                    file_name = os.path.basename(src_path)
+                    dst_path = os.path.join(self.target_path, file_name)
+                    
+                    try:
+                        # Проверяем, что не пытаемся переместить файл сам в себя
+                        if src_path != dst_path:
+                            # Перемещаем файл или папку (оригинал)
+                            shutil.move(src_path, dst_path)
+                    except Exception as e:
+                        print(f"Ошибка перемещения: {e}")
+        else:
+            event.ignore()
 
-    def mousePressEvent(self, event):
+class FenceApp:
+    def __init__(self):
+        self.width = 500
+        self.full_height = 600
+        self.drag_pos = QPoint()
+
+        self.header = QWidget()
+        self.header.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.header.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.header.setFixedSize(self.width, 55)
+        
+        main_h_layout = QVBoxLayout(self.header)
+        main_h_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.header_container = QFrame()
+        self.header_container.setObjectName("HeaderContainer")
+        main_h_layout.addWidget(self.header_container)
+
+        h_layout = QVBoxLayout(self.header_container)
+        h_layout.setContentsMargins(10, 0, 10, 0)
+
+        self.title_edit = QLineEdit("🟦 Моя Сетка Приложений")
+        self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_edit.setReadOnly(True)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        
+        self.header.setStyleSheet("""
+            QFrame#HeaderContainer { 
+                background-color: #141419; 
+                border: 2px solid #00d4ff; 
+                border-radius: 12px; 
+            }
+            QLineEdit { 
+                color: #00d4ff; 
+                font-family: 'Segoe UI'; 
+                font-size: 16px; 
+                font-weight: bold; 
+                border: none; 
+                background: transparent; 
+            }
+        """)
+        h_layout.addWidget(self.title_edit)
+
+        self.body = BodyWindow(self.header)
+        self.body.setFixedWidth(self.width)
+        self.body.setFixedHeight(0)
+
+        self.animation = QPropertyAnimation(self.body, b"anim_height")
+        self.animation.setDuration(350)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.sync_and_check)
+        self.timer.start(10)
+
+        self.header.mousePressEvent = self.h_press
+        self.header.mouseMoveEvent = self.h_move
+        self.title_edit.mouseDoubleClickEvent = self.enable_edit
+        self.title_edit.returnPressed.connect(self.disable_edit)
+
+        self.header.show()
+        self.body.show()
+
+    def sync_and_check(self):
+        self.body.move(self.header.x(), self.header.y() + self.header.height() - 5)
+
+        if self.title_edit.hasFocus(): return
+
+        mouse = QCursor.pos()
+        over_header = self.header.geometry().contains(mouse)
+        over_body = self.body.geometry().contains(mouse) and self.body.height() > 10
+
+        if over_header or over_body:
+            if self.animation.endValue() != self.full_height:
+                self.animation.stop()
+                self.animation.setEndValue(self.full_height)
+                self.animation.start()
+        else:
+            if self.animation.endValue() != 0:
+                self.animation.stop()
+                self.animation.setEndValue(0)
+                self.animation.start()
+
+    def h_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.drag_pos = event.globalPosition().toPoint() - self.header.frameGeometry().topLeft()
 
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self.drag_pos)
+    def h_move(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and not self.title_edit.hasFocus():
+            self.header.move(event.globalPosition().toPoint() - self.drag_pos)
+
+    def enable_edit(self, event):
+        self.title_edit.setReadOnly(False)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.title_edit.setFocus()
+        self.title_edit.selectAll()
+
+    def disable_edit(self):
+        self.title_edit.setReadOnly(True)
+        self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.title_edit.clearFocus()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = FenceWindow()
-    window.show()
+    fence = FenceApp()
     sys.exit(app.exec())

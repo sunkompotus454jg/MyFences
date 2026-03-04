@@ -4,7 +4,7 @@ import json
 import shutil
 import uuid
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLineEdit, QListView, QFrame, QMenu, QColorDialog, QInputDialog)
+                             QLineEdit, QListView, QFrame, QMenu, QColorDialog, QDialog, QLabel, QPushButton)
 from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor, QColor
 from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty, QRect
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -22,21 +22,102 @@ THEMES = {
     "Red":    {"name": "Красный Неон",    "border": "#ff0055", "bg": "#1c1014", "body": "#26161a"}
 }
 
+# --- КАСТОМНОЕ ОКНО ВВОДА ИМЕНИ ПРЕСЕТА ---
+class CustomNameDialog(QDialog):
+    def __init__(self, parent=None, theme_color="#00d4ff"):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(300, 160)
+        
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.container = QFrame(self)
+        self.layout.addWidget(self.container)
+        
+        # Стилизуем окно в выбранный пользователем цвет
+        self.container.setStyleSheet(f"""
+            QFrame {{
+                background-color: #1a1a21;
+                border: 2px solid {theme_color};
+                border-radius: {BORDER_RADIUS}px;
+            }}
+            QLabel {{ color: white; border: none; font-family: 'Segoe UI'; font-size: 14px; font-weight: bold; }}
+            QLineEdit {{ 
+                background-color: #141419; 
+                color: {theme_color}; 
+                border: 1px solid {theme_color}; 
+                border-radius: 3px; 
+                padding: 6px; 
+                font-family: 'Segoe UI'; font-size: 14px; font-weight: bold;
+            }}
+            QPushButton {{
+                background-color: #141419;
+                color: white;
+                border: 1px solid {theme_color};
+                border-radius: 4px;
+                padding: 6px 15px;
+                font-family: 'Segoe UI'; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {theme_color}; color: black; }}
+        """)
+        
+        c_layout = QVBoxLayout(self.container)
+        c_layout.setContentsMargins(20, 20, 20, 20)
+        c_layout.setSpacing(15)
+        
+        self.title_lbl = QLabel("Введите название пресета:")
+        self.title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c_layout.addWidget(self.title_lbl)
+        
+        self.name_input = QLineEdit()
+        self.name_input.setText("Мой цвет")
+        self.name_input.selectAll() # Сразу выделяем текст для удобного ввода
+        c_layout.addWidget(self.name_input)
+        
+        btn_layout = QHBoxLayout()
+        self.btn_cancel = QPushButton("Отмена")
+        self.btn_ok = QPushButton("Сохранить")
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_ok)
+        
+        c_layout.addLayout(btn_layout)
+        
+        self.btn_ok.clicked.connect(self.accept)
+        self.btn_cancel.clicked.connect(self.reject)
+        self.name_input.returnPressed.connect(self.accept)
+        
+        self.drag_pos = None
+
+    def get_name(self):
+        return self.name_input.text().strip() or "Мой цвет"
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos:
+            self.move(event.globalPosition().toPoint() - self.drag_pos)
+            
+    def mouseReleaseEvent(self, event):
+        self.drag_pos = None
+
+
 # --- КЛАСС ДЛЯ МЕНЮ ТЕМ (ЧТОБЫ РАБОТАЛ ПРАВЫЙ КЛИК) ---
 class ThemeMenu(QMenu):
     def __init__(self, title, parent_window):
         super().__init__(title, parent_window)
-        self.parent_window = parent_window # Сохраняем ссылку на окно сетки
+        self.parent_window = parent_window 
         
     def mouseReleaseEvent(self, event):
         action = self.actionAt(event.pos())
-        # Если кликнули ПРАВОЙ кнопкой по пункту меню
         if action and event.button() == Qt.MouseButton.RightButton:
             theme_key = action.data()
-            # Проверяем, что это именно кастомная тема (базовые удалять нельзя)
             if theme_key and str(theme_key).startswith("Custom_"):
                 self.parent_window.manager.remove_custom_theme(theme_key)
-                self.close() # Закрываем меню после удаления
+                self.close() 
                 return
         super().mouseReleaseEvent(event)
 
@@ -178,7 +259,6 @@ class FenceInstance(QWidget):
     # --- ТЕМАТИКА И ВНЕШНИЙ ВИД ---
     def apply_theme(self, theme_key):
         all_themes = self.manager.get_all_themes()
-        # Защита: если тема была удалена, откатываемся на синюю
         if theme_key not in all_themes:
             theme_key = "Blue"
             
@@ -237,10 +317,12 @@ class FenceInstance(QWidget):
         body_color = QColorDialog.getColor(title="2/2: Выберите основной цвет фона")
         if not body_color.isValid(): return
 
-        # Запрашиваем название для пресета
-        name, ok = QInputDialog.getText(self, "Новый пресет", "Введите название для этого цвета:")
-        if not ok or not name.strip():
-            name = "Мой цвет"
+        # ВЫЗЫВАЕМ НАШЕ КАСТОМНОЕ СТИЛЬНОЕ ОКНО
+        dialog = CustomNameDialog(self, border_color.name())
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return # Если нажали Отмена
+            
+        name = dialog.get_name()
 
         custom_theme_data = {
             "name": name,
@@ -249,10 +331,8 @@ class FenceInstance(QWidget):
             "body": body_color.name()
         }
         
-        # Сохраняем в Менеджере и получаем ID
         theme_id = self.manager.add_custom_theme(custom_theme_data)
 
-        # Применяем
         if apply_globally:
             self.manager.apply_global_theme(theme_id)
         else:
@@ -280,13 +360,12 @@ class FenceInstance(QWidget):
         """
         menu.setStyleSheet(menu_style)
 
-        # 1. Меню текущего окна (Используем кастомный ThemeMenu)
         color_menu = ThemeMenu("🎨 Цвет этого окна", self)
         color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
             display_name = data["name"] + " (ПКМ - удалить)" if str(key).startswith("Custom_") else data["name"]
             action = color_menu.addAction(display_name)
-            action.setData(key) # Сохраняем ID темы в экшен
+            action.setData(key) 
             action.triggered.connect(lambda checked, k=key: self.apply_theme(k))
             
         color_menu.addSeparator()
@@ -294,7 +373,6 @@ class FenceInstance(QWidget):
         custom_action.triggered.connect(lambda: self.prompt_custom_theme(apply_globally=False))
         menu.addMenu(color_menu)
 
-        # 2. Меню глобальное (Используем кастомный ThemeMenu)
         global_color_menu = ThemeMenu("🌍 Цвет всех окон", self)
         global_color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
@@ -494,14 +572,12 @@ class FenceManager:
         self.server.listen("MyFencesApp")
         self.server.newConnection.connect(self.handle_new_connection)
 
-    # Получить словарь ВСЕХ тем (базовые + пользовательские)
     def get_all_themes(self):
         combined = THEMES.copy()
         customs = self.config_data.get("custom_themes", {})
         combined.update(customs)
         return combined
 
-    # Добавить новую пользовательскую тему
     def add_custom_theme(self, theme_data):
         theme_id = f"Custom_{uuid.uuid4().hex[:6]}"
         if "custom_themes" not in self.config_data:
@@ -511,13 +587,11 @@ class FenceManager:
         self.save_config()
         return theme_id
 
-    # Удалить пользовательскую тему
     def remove_custom_theme(self, theme_id):
         if "custom_themes" in self.config_data and theme_id in self.config_data["custom_themes"]:
             del self.config_data["custom_themes"][theme_id]
             self.save_config()
             
-            # Если какие-то окна использовали эту удаленную тему, сбрасываем их на дефолт (Blue)
             for fence in self.fences:
                 if fence.current_theme == theme_id:
                     fence.apply_theme("Blue")

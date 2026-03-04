@@ -8,7 +8,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Blue",
+            "theme": "Custom_d785fd",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -24,7 +24,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Blue",
+            "theme": "Custom_d785fd",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -40,7 +40,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Blue",
+            "theme": "Custom_d785fd",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -49,5 +49,18 @@
             }
         }
     ],
-    "custom_themes": {}
+    "custom_themes": {
+        "Custom_9a6363": {
+            "name": "Arctic Frost",
+            "border": "#00eeff",
+            "bg": "#0c1118",
+            "body": "#0d131a"
+        },
+        "Custom_d785fd": {
+            "name": "Ghost Monochrome",
+            "border": "#ffffff",
+            "bg": "#101010",
+            "body": "#121212"
+        }
+    }
 }

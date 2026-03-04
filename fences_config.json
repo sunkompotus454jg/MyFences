@@ -4,8 +4,8 @@
             "id": "fence_1",
             "title": "🟦 тест 1",
             "path": "C:\\Users\\KoMpOTiK\\Desktop\\MyFences",
-            "x": 932,
-            "y": 3,
+            "x": 965,
+            "y": 1,
             "width": 291,
             "height": 357
         },
@@ -13,7 +13,16 @@
             "id": "fence_36af1e",
             "title": "🟦тест 2",
             "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_36af1e",
-            "x": 531,
+            "x": 434,
+            "y": 1,
+            "width": 530,
+            "height": 524
+        },
+        {
+            "id": "fence_7302f1",
+            "title": "🟦 Новая Сетка",
+            "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_7302f1",
+            "x": 1256,
             "y": 1,
             "width": 400,
             "height": 300

@@ -6,7 +6,7 @@ import uuid
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QListView, QFrame, QPushButton)
 from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor
-from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty
+from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty, QRect
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 CONFIG_FILE = "fences_config.json"
@@ -44,7 +44,6 @@ class ResizeHandle(QWidget):
 # --- 2. ЕДИНОЕ ОКНО СЕТКИ ---
 class FenceInstance(QWidget):
     
-    # 🌟 НОВОЕ: Кастомное свойство, которое сжимает сразу И тело, И окно ОС
     @pyqtProperty(int)
     def current_body_height(self):
         return self.body_frame.maximumHeight()
@@ -53,7 +52,7 @@ class FenceInstance(QWidget):
     def current_body_height(self, value):
         self.body_frame.setMinimumHeight(value)
         self.body_frame.setMaximumHeight(value)
-        self.setFixedHeight(55 + value) # 55 - это высота шапки
+        self.setFixedHeight(55 + value)
         
     def __init__(self, manager, config):
         super().__init__()
@@ -71,12 +70,14 @@ class FenceInstance(QWidget):
         start_x = config.get("x", 100)
         start_y = config.get("y", 100)
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        # 🌟 ИЗМЕНЕНО: Заменили WindowStaysOnTopHint на WindowStaysOnBottomHint
+        # Теперь сетки всегда лежат на самом низу, как ярлыки рабочего стола!
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnBottomHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
         
         self.setFixedWidth(self.start_width)
-        self.setFixedHeight(55) # Стартуем идеально сжатыми
+        self.setFixedHeight(55)
         self.move(start_x, start_y)
 
         self.main_layout = QVBoxLayout(self)
@@ -149,14 +150,13 @@ class FenceInstance(QWidget):
 
         self.resizer = ResizeHandle(self, self)
 
-        # Анимация теперь привязана к нашему кастомному свойству
         self.animation = QPropertyAnimation(self, b"current_body_height")
         self.animation.setDuration(300)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         self.drag_pos = None
         self.resizing = False
-        self.is_expanded = False # Четко отслеживаем состояние
+        self.is_expanded = False
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_mouse)
@@ -189,7 +189,6 @@ class FenceInstance(QWidget):
         super().resizeEvent(event)
         self.resizer.move(self.width() - 20, self.height() - 20)
 
-    # 🌟 НОВОЕ: Защищенная логика проверки мыши с жесткими начальными точками
     def check_mouse(self):
         if self.title_edit.hasFocus() or self.resizing: return
 
@@ -203,7 +202,6 @@ class FenceInstance(QWidget):
             except: pass
             
             self.set_header_style(expanded=True)
-            # Жестко задаем, откуда и куда анимировать
             self.animation.setStartValue(self.current_body_height)
             self.animation.setEndValue(self.full_height)
             self.resizer.show()
@@ -214,7 +212,6 @@ class FenceInstance(QWidget):
             self.animation.stop()
             self.resizer.hide()
             
-            # Жестко задаем старт и конец сворачивания
             self.animation.setStartValue(self.current_body_height)
             self.animation.setEndValue(0)
             self.animation.finished.connect(self.on_collapse_finished)
@@ -241,7 +238,7 @@ class FenceInstance(QWidget):
         
         self.setFixedWidth(new_width)
         self.full_height = new_height
-        self.current_body_height = new_height # Растягиваем окно сразу напрямую
+        self.current_body_height = new_height
 
     def stop_resizing(self):
         self.resizing = False
@@ -261,7 +258,63 @@ class FenceInstance(QWidget):
 
         self.manager.config_data["fences"] = [f for f in self.manager.config_data["fences"] if f["id"] != self.id]
         self.manager.save_config()
+        self.manager.fences.remove(self)
         self.close()
+
+    # 🌟 НОВОЕ: Логика магнитного прилипания
+    def snap_to_edges(self, new_pos):
+        snap_dist = 20 # Дистанция, на которой срабатывает магнит
+        new_rect = QRect(new_pos.x(), new_pos.y(), self.width(), self.height())
+        
+        # Получаем рабочую область экрана (без учета панели задач Windows)
+        screen = QApplication.primaryScreen().availableGeometry()
+        
+        snapped_x = False
+        snapped_y = False
+        
+        # 1. Сначала проверяем другие сетки, чтобы они липли друг к другу
+        for fence in self.manager.fences:
+            if fence is self: continue
+            other = fence.geometry()
+            
+            # Магнит по горизонтали (X)
+            if not snapped_x:
+                if abs(new_rect.left() - other.right()) < snap_dist:
+                    new_pos.setX(other.right())
+                    snapped_x = True
+                elif abs(new_rect.right() - other.left()) < snap_dist:
+                    new_pos.setX(other.left() - self.width())
+                    snapped_x = True
+                elif abs(new_rect.left() - other.left()) < snap_dist:
+                    new_pos.setX(other.left())
+                    snapped_x = True
+                    
+            # Магнит по вертикали (Y)
+            if not snapped_y:
+                if abs(new_rect.top() - other.bottom()) < snap_dist:
+                    new_pos.setY(other.bottom())
+                    snapped_y = True
+                elif abs(new_rect.bottom() - other.top()) < snap_dist:
+                    new_pos.setY(other.top() - self.height())
+                    snapped_y = True
+                elif abs(new_rect.top() - other.top()) < snap_dist:
+                    new_pos.setY(other.top())
+                    snapped_y = True
+
+        # 2. Если не прилипли к другой сетке, липнем к краям экрана
+        if not snapped_x:
+            if abs(new_rect.left() - screen.left()) < snap_dist:
+                new_pos.setX(screen.left())
+            elif abs(new_rect.right() - screen.right()) < snap_dist:
+                new_pos.setX(screen.right() - self.width())
+                
+        if not snapped_y:
+            if abs(new_rect.top() - screen.top()) < snap_dist:
+                new_pos.setY(screen.top())
+            elif abs(new_rect.bottom() - screen.bottom()) < snap_dist:
+                new_pos.setY(screen.bottom() - self.height())
+
+        return new_pos
 
     def h_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -269,7 +322,11 @@ class FenceInstance(QWidget):
 
     def h_move(self, event):
         if event.buttons() == Qt.MouseButton.LeftButton and not self.title_edit.hasFocus() and self.drag_pos:
-            self.move(event.globalPosition().toPoint() - self.drag_pos)
+            raw_new_pos = event.globalPosition().toPoint() - self.drag_pos
+            
+            # Пропускаем новые координаты через функцию прилипания
+            snapped_pos = self.snap_to_edges(raw_new_pos)
+            self.move(snapped_pos)
 
     def h_release(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.drag_pos:

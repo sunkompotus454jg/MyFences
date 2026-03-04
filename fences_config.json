@@ -4,11 +4,11 @@
             "id": "fence_0731ee",
             "title": "Новая Сетка",
             "path": "C:\\Users\\KoMpOTiK/Documents\\MyFencesData\\fence_0731ee",
-            "x": 460,
+            "x": 459,
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_199052",
+            "theme": "Blue",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -24,7 +24,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_199052",
+            "theme": "Blue",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",
@@ -40,7 +40,7 @@
             "y": 0,
             "width": 400,
             "height": 300,
-            "theme": "Custom_199052",
+            "theme": "Blue",
             "custom_colors": {
                 "name": "Свой",
                 "border": "#fcee0a",

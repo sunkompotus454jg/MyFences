@@ -22,8 +22,7 @@ THEMES = {
     "Red":    {"name": "Красный Неон",    "border": "#ff0055", "bg": "#1c1014", "body": "#26161a"}
 }
 
-
-# --- ЕДИНОЕ КАСТОМНОЕ ОКНО СОЗДАНИЯ ТЕМЫ ---
+# --- КАСТОМНОЕ ОКНО ВВОДА ИМЕНИ ПРЕСЕТА ---
 class CustomThemeDialog(QDialog):
     def __init__(self, parent=None, default_border="#00d4ff", default_body="#1a1a21"):
         super().__init__(parent)
@@ -38,22 +37,11 @@ class CustomThemeDialog(QDialog):
         self.container.setObjectName("MainContainer")
         self.layout.addWidget(self.container)
         
-        # Базовый стиль окна
         self.container.setStyleSheet(f"""
-            QFrame#MainContainer {{
-                background-color: #1a1a21;
-                border: 2px solid {default_border};
-                border-radius: {BORDER_RADIUS}px;
-            }}
+            QFrame#MainContainer {{ background-color: #1a1a21; border: 2px solid {default_border}; border-radius: {BORDER_RADIUS}px; }}
             QLabel {{ color: white; border: none; font-family: 'Segoe UI'; font-size: 13px; }}
-            QLineEdit {{ 
-                background-color: #141419; color: white; border: 1px solid #555; 
-                border-radius: 3px; padding: 6px; font-family: 'Segoe UI'; font-size: 13px;
-            }}
-            QPushButton {{
-                background-color: #141419; color: white; border: 1px solid #555;
-                border-radius: 4px; padding: 6px 15px; font-family: 'Segoe UI';
-            }}
+            QLineEdit {{ background-color: #141419; color: white; border: 1px solid #555; border-radius: 3px; padding: 6px; font-family: 'Segoe UI'; font-size: 13px; }}
+            QPushButton {{ background-color: #141419; color: white; border: 1px solid #555; border-radius: 4px; padding: 6px 15px; font-family: 'Segoe UI'; }}
             QPushButton:hover {{ background-color: {default_border}; color: black; border: 1px solid {default_border}; }}
         """)
         
@@ -61,12 +49,10 @@ class CustomThemeDialog(QDialog):
         c_layout.setContentsMargins(20, 20, 20, 20)
         c_layout.setSpacing(10)
         
-        # 1. Имя пресета
         c_layout.addWidget(QLabel("Название пресета:"))
         self.name_input = QLineEdit("Мой цвет")
         c_layout.addWidget(self.name_input)
         
-        # 2. Цвет контура
         c_layout.addWidget(QLabel("Цвет контура/текста (HEX):"))
         border_layout = QHBoxLayout()
         self.border_input = QLineEdit(default_border)
@@ -76,7 +62,6 @@ class CustomThemeDialog(QDialog):
         border_layout.addWidget(self.border_btn)
         c_layout.addLayout(border_layout)
         
-        # 3. Цвет фона
         c_layout.addWidget(QLabel("Основной цвет фона (HEX):"))
         body_layout = QHBoxLayout()
         self.body_input = QLineEdit(default_body)
@@ -86,13 +71,11 @@ class CustomThemeDialog(QDialog):
         body_layout.addWidget(self.body_btn)
         c_layout.addLayout(body_layout)
 
-        # 4. Превью
         c_layout.addWidget(QLabel("Превью:"))
         self.preview_frame = QFrame()
         self.preview_frame.setFixedHeight(40)
         c_layout.addWidget(self.preview_frame)
 
-        # 5. Кнопки
         c_layout.addSpacing(10)
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Отмена")
@@ -101,7 +84,6 @@ class CustomThemeDialog(QDialog):
         btn_layout.addWidget(self.btn_ok)
         c_layout.addLayout(btn_layout)
         
-        # Подключения
         self.border_btn.clicked.connect(lambda: self.pick_color(self.border_input))
         self.body_btn.clicked.connect(lambda: self.pick_color(self.body_input))
         self.border_input.textChanged.connect(self.update_preview)
@@ -111,7 +93,7 @@ class CustomThemeDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         
         self.drag_pos = None
-        self.update_preview() # Инициализируем превью
+        self.update_preview() 
         
     def pick_color(self, line_edit):
         color = QColorDialog.getColor(QColor(line_edit.text()), self, "Выберите цвет")
@@ -123,39 +105,22 @@ class CustomThemeDialog(QDialog):
         body = self.body_input.text().strip()
         
         if QColor(border).isValid() and QColor(body).isValid():
-            bg = QColor(body).darker(110).name()
-            self.preview_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {body};
-                    border: 2px solid {border};
-                    border-radius: {BORDER_RADIUS}px;
-                }}
-            """)
-            # Динамически меняем рамку самого окна диалога
-            self.container.setStyleSheet(self.container.styleSheet().replace(
-                r"border: 2px solid .*", f"border: 2px solid {border};"
-            ))
+            self.preview_frame.setStyleSheet(f"QFrame {{ background-color: {body}; border: 2px solid {border}; border-radius: {BORDER_RADIUS}px; }}")
+            self.container.setStyleSheet(self.container.styleSheet().replace(r"border: 2px solid .*", f"border: 2px solid {border};"))
 
     def get_theme_data(self):
         border = self.border_input.text().strip()
         body = self.body_input.text().strip()
         name = self.name_input.text().strip() or "Мой цвет"
-        
-        # Защита от невалидного HEX
         if not QColor(border).isValid(): border = "#00d4ff"
         if not QColor(body).isValid(): body = "#1a1a21"
-            
         bg = QColor(body).darker(110).name()
         return {"name": name, "border": border, "bg": bg, "body": body}
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
+        if event.button() == Qt.MouseButton.LeftButton: self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
     def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos:
-            self.move(event.globalPosition().toPoint() - self.drag_pos)
-            
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos: self.move(event.globalPosition().toPoint() - self.drag_pos)
     def mouseReleaseEvent(self, event):
         self.drag_pos = None
 
@@ -251,11 +216,12 @@ class FenceInstance(QWidget):
         h_layout = QHBoxLayout(self.header_frame)
         h_layout.setContentsMargins(15, 0, 15, 0)
         
-        # Название строго по центру, без иконок
         self.title_edit = QLineEdit(self.title)
         self.title_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_edit.setReadOnly(True)
         self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # 🌟 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Делаем текст прозрачным для мыши по умолчанию!
+        self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         h_layout.addWidget(self.title_edit)
 
         # --- ТЕЛО ---
@@ -302,10 +268,12 @@ class FenceInstance(QWidget):
         self.timer.timeout.connect(self.check_mouse)
         self.timer.start(50)
 
+        # Теперь события принимает вся шапка целиком, включая зону над текстом
         self.header_frame.mousePressEvent = self.h_press
         self.header_frame.mouseMoveEvent = self.h_move
         self.header_frame.mouseReleaseEvent = self.h_release
-        self.title_edit.mouseDoubleClickEvent = self.enable_edit
+        self.header_frame.mouseDoubleClickEvent = self.enable_edit # Двойной клик теперь на шапке
+        
         self.title_edit.returnPressed.connect(self.disable_edit)
         self.title_edit.editingFinished.connect(self.disable_edit)
 
@@ -328,13 +296,7 @@ class FenceInstance(QWidget):
         self.resizer.setStyleSheet(f"background-color: transparent; border-bottom: 3px solid {theme['border']}; border-right: 3px solid {theme['border']}; border-bottom-right-radius: {BORDER_RADIUS}px;")
         
         self.body_frame.setStyleSheet(f"""
-            QFrame#BodyFrame {{
-                background-color: {theme['body']};
-                border: 2px solid {theme['border']};
-                border-top: none; 
-                border-bottom-left-radius: {BORDER_RADIUS}px;
-                border-bottom-right-radius: {BORDER_RADIUS}px;
-            }}
+            QFrame#BodyFrame {{ background-color: {theme['body']}; border: 2px solid {theme['border']}; border-top: none; border-bottom-left-radius: {BORDER_RADIUS}px; border-bottom-right-radius: {BORDER_RADIUS}px; }}
             QListView {{ background: transparent; border: none; color: white; outline: none; }}
         """)
         
@@ -345,29 +307,12 @@ class FenceInstance(QWidget):
         theme = all_themes.get(self.current_theme, THEMES["Blue"])
             
         if expanded:
-            self.header_frame.setStyleSheet(f"""
-                QFrame#HeaderFrame {{
-                    background-color: {theme['bg']}; 
-                    border: 2px solid {theme['border']}; 
-                    border-bottom: none;
-                    border-top-left-radius: {BORDER_RADIUS}px; 
-                    border-top-right-radius: {BORDER_RADIUS}px;
-                    border-bottom-left-radius: 0px; 
-                    border-bottom-right-radius: 0px;
-                }}
-            """)
+            self.header_frame.setStyleSheet(f"QFrame#HeaderFrame {{ background-color: {theme['bg']}; border: 2px solid {theme['border']}; border-bottom: none; border-top-left-radius: {BORDER_RADIUS}px; border-top-right-radius: {BORDER_RADIUS}px; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px; }}")
         else:
-            self.header_frame.setStyleSheet(f"""
-                QFrame#HeaderFrame {{ 
-                    background-color: {theme['bg']}; 
-                    border: 2px solid {theme['border']}; 
-                    border-radius: {BORDER_RADIUS}px; 
-                }}
-            """)
+            self.header_frame.setStyleSheet(f"QFrame#HeaderFrame {{ background-color: {theme['bg']}; border: 2px solid {theme['border']}; border-radius: {BORDER_RADIUS}px; }}")
 
-    # --- СОЗДАНИЕ СВОЕГО ПРЕСЕТА ЧЕРЕЗ НОВОЕ ОКНО ---
+    # --- СОЗДАНИЕ СВОЕГО ПРЕСЕТА ---
     def prompt_custom_theme(self, apply_globally=False):
-        # Получаем текущие цвета, чтобы подставить их как шаблон
         all_themes = self.manager.get_all_themes()
         curr = all_themes.get(self.current_theme, THEMES["Blue"])
         
@@ -376,10 +321,8 @@ class FenceInstance(QWidget):
             theme_data = dialog.get_theme_data()
             theme_id = self.manager.add_custom_theme(theme_data)
 
-            if apply_globally:
-                self.manager.apply_global_theme(theme_id)
-            else:
-                self.apply_theme(theme_id)
+            if apply_globally: self.manager.apply_global_theme(theme_id)
+            else: self.apply_theme(theme_id)
 
     # --- КОНТЕКСТНОЕ МЕНЮ (ПКМ) ---
     def show_context_menu(self, pos):
@@ -390,17 +333,7 @@ class FenceInstance(QWidget):
         theme = all_themes.get(self.current_theme, THEMES["Blue"])
         
         menu = QMenu(self)
-        menu_style = f"""
-            QMenu {{
-                background-color: {theme['body']};
-                color: white;
-                border: 1px solid {theme['border']};
-                border-radius: 5px;
-                font-family: 'Segoe UI'; font-size: 13px;
-            }}
-            QMenu::item {{ padding: 8px 20px; }}
-            QMenu::item:selected {{ background-color: rgba(255, 255, 255, 20); }}
-        """
+        menu_style = f"QMenu {{ background-color: {theme['body']}; color: white; border: 1px solid {theme['border']}; border-radius: 5px; font-family: 'Segoe UI'; font-size: 13px; }} QMenu::item {{ padding: 8px 20px; }} QMenu::item:selected {{ background-color: rgba(255, 255, 255, 20); }}"
         menu.setStyleSheet(menu_style)
 
         color_menu = ThemeMenu("🎨 Цвет этого окна", self)
@@ -562,7 +495,9 @@ class FenceInstance(QWidget):
             self.config["y"] = self.y()
             self.manager.save_config()
 
+    # 🌟 А ВОТ И МАГИЯ: Включаем и выключаем прозрачность текста для мыши
     def enable_edit(self, event):
+        self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.title_edit.setReadOnly(False)
         self.title_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.title_edit.setFocus()
@@ -572,6 +507,7 @@ class FenceInstance(QWidget):
         self.title_edit.setReadOnly(True)
         self.title_edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.title_edit.clearFocus()
+        self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.config["title"] = self.title_edit.text()
         self.manager.save_config()
 

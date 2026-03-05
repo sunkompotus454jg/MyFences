@@ -5,9 +5,9 @@ import shutil
 import uuid
 import ctypes
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLineEdit, QListView, QFrame, QMenu, QColorDialog, QDialog, QLabel, QPushButton, QSizePolicy)
-from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor, QColor, QIcon, QPainter, QPen, QBrush
-from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty, QRect, QFileInfo
+                             QLineEdit, QListView, QFrame, QMenu, QColorDialog, QDialog, QLabel, QPushButton, QSizePolicy, QMessageBox)
+from PyQt6.QtGui import QFileSystemModel, QDesktopServices, QCursor, QColor, QIcon, QPainter, QPen
+from PyQt6.QtCore import Qt, QPoint, QSize, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtProperty, QRect, QFileInfo, QItemSelectionModel
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 try:
@@ -46,16 +46,12 @@ def qss(color_str):
         
     return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alpha / 255.0:.3f})"
 
-
 class VectorSearchButton(QPushButton):
-    """Кастомная кнопка, которая сама рисует миниатюрную стильную лупу"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        # --- УМЕНЬШИЛИ РАЗМЕР КНОПКИ ---
         self.setFixedSize(26, 26) 
-        # ------------------------------
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Искать иконки")
+        self.setToolTip("Поиск")
         self._current_color = QColor("white")
         self._base_color = QColor("white")
         self._hover_color = QColor("white")
@@ -95,37 +91,27 @@ class VectorSearchButton(QPushButton):
         offset = 1 if self._pressed else 0
         
         pen = QPen(self._current_color)
-        # --- УМЕНЬШИЛИ ТОЛЩИНУ ЛИНИИ ---
-        pen.setWidthF(1.3) # Теперь линия тоньше
-        # ------------------------------
+        pen.setWidthF(1.3) 
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         
         w = self.width()
         h = self.height()
         
-        # --- УМЕНЬШИЛИ ПАРАМЕТРЫ ЛУПЫ ---
         cx = w / 2 + offset
         cy = h / 2 + offset
-        r = 5 # Радиус круга меньше
-        # -------------------------------
+        r = 5 
         
-        # Смещаем центр влево, чтобы ручка влезла
         draw_cx = cx - 2
-        
         painter.drawEllipse(QPoint(int(draw_cx), int(cy)), r, r)
         
         handle_start_x = draw_cx + r * 0.707
         handle_start_y = cy + r * 0.707
-        
-        # --- УМЕНЬШИЛИ ДЛИНУ РУЧКИ ---
         handle_end_x = draw_cx + r * 1.5 
         handle_end_y = cy + r * 1.5
-        # ----------------------------
         
         painter.drawLine(QPoint(int(handle_start_x), int(handle_start_y)), 
                          QPoint(int(handle_end_x), int(handle_end_y)))
-
 
 class CustomIconProvider(QFileIconProvider):
     def icon(self, info):
@@ -147,13 +133,102 @@ class CustomIconProvider(QFileIconProvider):
                     pass
         return super().icon(info)
 
+
 class CustomFileSystemModel(QFileSystemModel):
+    def flags(self, index):
+        default_flags = super().flags(index)
+        if index.isValid():
+            return default_flags | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+        return default_flags
+
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if role == Qt.ItemDataRole.DisplayRole:
-            name = super().data(index, role)
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            file_info = self.fileInfo(index)
+            name = file_info.fileName()
             if name:
                 return os.path.splitext(name)[0]
         return super().data(index, role)
+
+    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+        if role == Qt.ItemDataRole.EditRole:
+            file_info = self.fileInfo(index)
+            old_path = file_info.absoluteFilePath()
+            ext = file_info.suffix()
+            
+            new_base = str(value).strip()
+            if not new_base or new_base == file_info.completeBaseName():
+                return False
+                
+            new_name = f"{new_base}.{ext}" if ext and file_info.isFile() else new_base
+            new_path = os.path.join(file_info.absolutePath(), new_name)
+            
+            if old_path != new_path:
+                try:
+                    os.rename(old_path, new_path)
+                    return True 
+                except Exception as e:
+                    print(f"Ошибка переименования: {e}")
+                    return False
+            return True
+        return super().setData(index, value, role)
+
+
+class CustomListView(QListView):
+    def __init__(self, target_path, parent=None):
+        super().__init__(parent)
+        self.target_path = target_path
+        
+        self.setViewMode(QListView.ViewMode.IconMode)
+        self.setIconSize(QSize(32, 32)) 
+        self.setGridSize(QSize(90, 80)) 
+        self.setUniformItemSizes(True)  
+        self.setResizeMode(QListView.ResizeMode.Adjust)
+        self.setWordWrap(True) 
+        
+        self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
+        self.setSelectionRectVisible(True) 
+        self.setEditTriggers(QListView.EditTrigger.EditKeyPressed | QListView.EditTrigger.SelectedClicked)
+        
+        self.setMovement(QListView.Movement.Snap)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QListView.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() and event.source() != self:
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls() and event.source() != self:
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            if event.source() == self:
+                super().dropEvent(event)
+            else:
+                event.setDropAction(Qt.DropAction.MoveAction)
+                event.accept()
+                for url in event.mimeData().urls():
+                    if url.isLocalFile():
+                        src_path = url.toLocalFile()
+                        file_name = os.path.basename(src_path)
+                        dst_path = os.path.join(self.target_path, file_name)
+                        try:
+                            if src_path != dst_path: 
+                                shutil.move(src_path, dst_path)
+                                desktop_dir = os.path.expanduser("~\\Desktop")
+                                ctypes.windll.shell32.SHChangeNotify(0x00001000, 0x0005, desktop_dir, None)
+                        except Exception as e: print(f"Ошибка: {e}")
+        else:
+            super().dropEvent(event)
+
 
 class CustomThemeDialog(QDialog):
     def __init__(self, parent=None, default_border="#00d4ff", default_body="#1a1a21", default_title="#ffffff"):
@@ -180,7 +255,7 @@ class CustomThemeDialog(QDialog):
         c_layout.addWidget(QLabel("Цвет контура (HEX):"))
         border_layout = QHBoxLayout()
         self.border_input = QLineEdit(default_border)
-        self.border_btn = QPushButton("🎨")
+        self.border_btn = QPushButton("...")
         self.border_btn.setFixedSize(32, 30)
         border_layout.addWidget(self.border_input)
         border_layout.addWidget(self.border_btn)
@@ -189,7 +264,7 @@ class CustomThemeDialog(QDialog):
         c_layout.addWidget(QLabel("Цвет текста заголовка (HEX):"))
         title_layout = QHBoxLayout()
         self.title_input = QLineEdit(default_title)
-        self.title_btn = QPushButton("🎨")
+        self.title_btn = QPushButton("...")
         self.title_btn.setFixedSize(32, 30)
         title_layout.addWidget(self.title_input)
         title_layout.addWidget(self.title_btn)
@@ -198,7 +273,7 @@ class CustomThemeDialog(QDialog):
         c_layout.addWidget(QLabel("Основной цвет фона (HEX):"))
         body_layout = QHBoxLayout()
         self.body_input = QLineEdit(default_body)
-        self.body_btn = QPushButton("🎨")
+        self.body_btn = QPushButton("...")
         self.body_btn.setFixedSize(32, 30)
         body_layout.addWidget(self.body_input)
         body_layout.addWidget(self.body_btn)
@@ -299,7 +374,6 @@ class CustomThemeDialog(QDialog):
     def mouseReleaseEvent(self, event):
         self.drag_pos = None
 
-
 class ThemeMenu(QMenu):
     def __init__(self, title, parent_window):
         super().__init__(title, parent_window)
@@ -315,7 +389,6 @@ class ThemeMenu(QMenu):
                 self.close() 
                 return
         super().mouseReleaseEvent(event)
-
 
 class ResizeHandle(QWidget):
     def __init__(self, parent_widget, instance):
@@ -360,7 +433,10 @@ class FenceInstance(QWidget):
         
         self.id = config.get("id", "default")
         self.title = config.get("title", "Новая Сетка") 
-        self.target_path = config.get("path", os.getcwd())
+        
+        raw_path = config.get("path", "")
+        self.target_path = os.path.abspath(raw_path) if raw_path else os.getcwd()
+        
         self.current_theme = config.get("theme", "Blue")
         self.is_locked = config.get("locked", False)
         
@@ -379,7 +455,7 @@ class FenceInstance(QWidget):
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnBottomHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAcceptDrops(True)
+        self.setAcceptDrops(False) 
         
         self.setFixedWidth(self.start_width)
         self.setFixedHeight(HEADER_HEIGHT)
@@ -407,7 +483,6 @@ class FenceInstance(QWidget):
         self.search_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.search_btn.clicked.connect(self.toggle_search)
 
-        # Пустышка слева для баланса
         dummy = QWidget()
         dummy.setFixedSize(self.search_btn.width(), self.search_btn.height())
         dummy.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -438,25 +513,13 @@ class FenceInstance(QWidget):
         
         self.search_input.textChanged.connect(self.apply_search)
         
-        self.list_view = QListView()
+        self.list_view = CustomListView(self.target_path)
         self.list_view.setModel(self.model) 
         
         self.model.directoryLoaded.connect(self.on_directory_loaded)
         self.list_view.setRootIndex(self.model.index(self.target_path))
-        
-        self.list_view.setViewMode(QListView.ViewMode.IconMode)
-        self.list_view.setIconSize(QSize(32, 32)) 
-        self.list_view.setGridSize(QSize(90, 80)) 
-        self.list_view.setUniformItemSizes(True)  
-        self.list_view.setLayoutMode(QListView.LayoutMode.Batched) 
-        self.list_view.setResizeMode(QListView.ResizeMode.Adjust)
-        self.list_view.setWordWrap(True) 
-        self.list_view.setEditTriggers(QListView.EditTrigger.EditKeyPressed | QListView.EditTrigger.SelectedClicked)
 
-        self.list_view.doubleClicked.connect(self.open_file)
-        self.list_view.setAcceptDrops(False)
-        self.list_view.setMinimumHeight(0)
-        
+        self.list_view.doubleClicked.connect(self.open_file_double_click)
         self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_view.customContextMenuRequested.connect(self.show_context_menu)
         
@@ -535,7 +598,7 @@ class FenceInstance(QWidget):
         
         self.body_frame.setStyleSheet(f"""
             QFrame#BodyFrame {{ background-color: {body_qss}; border: 2px solid {border_qss}; border-top: none; border-bottom-left-radius: {BORDER_RADIUS}px; border-bottom-right-radius: {BORDER_RADIUS}px; }}
-            QListView {{ background: transparent; border: none; color: white; outline: none; }}
+            QListView {{ background: transparent; border: none; color: white; outline: none; selection-background-color: rgba(255,255,255, 30); }}
             QListView::item:selected {{ background: rgba(255,255,255, 30); border-radius: 5px; }}
             QListView QLineEdit {{ background: {bg_qss}; color: white; border: 1px solid {border_qss}; }}
         """)
@@ -598,6 +661,16 @@ class FenceInstance(QWidget):
 
     def show_context_menu(self, pos):
         index = self.list_view.indexAt(pos) 
+        selected_indexes = self.list_view.selectionModel().selectedIndexes()
+        
+        if not index.isValid():
+            self.list_view.clearSelection()
+            selected_indexes = []
+        elif index not in selected_indexes:
+            self.list_view.selectionModel().clearSelection()
+            self.list_view.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
+            selected_indexes = [index]
+
         all_themes = self.manager.get_all_themes()
         theme = all_themes.get(self.current_theme, THEMES["Blue"])
         
@@ -610,31 +683,59 @@ class FenceInstance(QWidget):
         
         menu_style = f"QMenu {{ background-color: {menu_bg_qss}; color: white; border: 1px solid {border_qss}; border-radius: 5px; font-family: 'Segoe UI'; font-size: 13px; }} QMenu::item {{ padding: 8px 20px; }} QMenu::item:selected {{ background-color: rgba(255, 255, 255, 20); }}"
 
-        if index.isValid():
+        if selected_indexes:
             file_menu = QMenu(self)
             file_menu.setStyleSheet(menu_style)
             
-            open_action = file_menu.addAction("Открыть")
-            rename_action = file_menu.addAction("Переименовать")
-            folder_action = file_menu.addAction("Показать в папке")
-            prop_action = file_menu.addAction("Свойства") 
+            count = len(selected_indexes)
             
-            file_menu.addSeparator()
-            del_action = file_menu.addAction("❌ Удалить файл")
+            if count == 1:
+                open_action = file_menu.addAction("Открыть")
+                run_admin_action = file_menu.addAction("Запуск от имени администратора")
+                rename_action = file_menu.addAction("Переименовать")
+                folder_action = file_menu.addAction("Показать в папке")
+                prop_action = file_menu.addAction("Свойства") 
+                file_menu.addSeparator()
+                del_action = file_menu.addAction("Удалить файл")
+            else:
+                open_action = file_menu.addAction(f"Открыть ({count})")
+                run_admin_action = None
+                rename_action = None
+                folder_action = None
+                prop_action = None
+                file_menu.addSeparator()
+                del_action = file_menu.addAction(f"Удалить выбранные ({count})")
 
             action = file_menu.exec(self.list_view.mapToGlobal(pos))
+            
             if action == open_action:
-                self.open_file(index)
-            elif action == rename_action:
+                for idx in selected_indexes:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(idx)))
+                    
+            elif action == run_admin_action and count == 1:
+                path = self.model.filePath(index)
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", os.path.normpath(path), None, None, 1)
+                    
+            elif action == rename_action and count == 1:
                 self.list_view.edit(index)
-            elif action == folder_action:
+                        
+            elif action == folder_action and count == 1:
                 path = self.model.filePath(index)
                 os.system(f'explorer /select,"{os.path.normpath(path)}"')
-            elif action == prop_action:
+                
+            elif action == prop_action and count == 1:
                 path = self.model.filePath(index)
                 ctypes.windll.shell32.ShellExecuteW(None, "properties", os.path.normpath(path), None, None, 1)
+                
             elif action == del_action:
-                self.model.remove(index)
+                msg = f"Вы уверены, что хотите удалить выбранные файлы ({count} шт.)?"
+                if count == 1:
+                    msg = f"Вы уверены, что хотите удалить '{self.model.fileName(index)}'?"
+                    
+                reply = QMessageBox.question(self, 'Подтверждение удаления', msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.Yes:
+                    for idx in selected_indexes:
+                        self.model.remove(idx)
             return
 
         menu = QMenu(self)
@@ -670,7 +771,7 @@ class FenceInstance(QWidget):
         color_menu = ThemeMenu("Цвет этого окна", self)
         color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
-            display_name = data["name"] + " (ПКМ - удалить)" if str(key).startswith("Custom_") else data["name"]
+            display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
             action = color_menu.addAction(display_name)
             action.setData(key) 
             action.triggered.connect(lambda checked, k=key: self.apply_theme(k))
@@ -683,7 +784,7 @@ class FenceInstance(QWidget):
         global_color_menu = ThemeMenu("Цвет всех окон", self)
         global_color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
-            display_name = data["name"] + " (ПКМ - удалить)" if str(key).startswith("Custom_") else data["name"]
+            display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
             action = global_color_menu.addAction(display_name)
             action.setData(key)
             action.triggered.connect(lambda checked, k=key: self.manager.apply_global_theme(k))
@@ -704,7 +805,8 @@ class FenceInstance(QWidget):
         self.resizer.move(self.width() - 20, self.height() - 20)
 
     def check_mouse(self):
-        if self.title_edit.hasFocus() or self.search_input.hasFocus() or self.resizing: return
+        if self.title_edit.hasFocus() or self.search_input.hasFocus() or self.resizing or self.list_view.state() == QListView.State.EditingState: 
+            return
 
         mouse = QCursor.pos()
         over_window = self.geometry().contains(mouse)
@@ -731,6 +833,8 @@ class FenceInstance(QWidget):
             if self.search_input.isVisible():
                 self.search_input.hide()
                 self.search_input.clear()
+            
+            self.list_view.clearSelection()
             
             self.animation.setStartValue(self.current_body_height)
             self.animation.setEndValue(0)
@@ -856,36 +960,8 @@ class FenceInstance(QWidget):
         self.config["title"] = self.title_edit.text()
         self.manager.save_config()
 
-    def open_file(self, index):
+    def open_file_double_click(self, index):
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(index)))
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls(): event.accept()
-        else: event.ignore()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.setDropAction(Qt.DropAction.MoveAction)
-            event.accept()
-        else: event.ignore()
-
-    def dropEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.setDropAction(Qt.DropAction.MoveAction)
-            event.accept()
-            for url in event.mimeData().urls():
-                if url.isLocalFile():
-                    src_path = url.toLocalFile()
-                    file_name = os.path.basename(src_path)
-                    dst_path = os.path.join(self.target_path, file_name)
-                    try:
-                        if src_path != dst_path: 
-                            shutil.move(src_path, dst_path)
-                            desktop_dir = os.path.expanduser("~\\Desktop")
-                            ctypes.windll.shell32.SHChangeNotify(0x00001000, 0x0005, desktop_dir, None)
-                    except Exception as e: print(f"Ошибка: {e}")
-        else: event.ignore()
-
 
 class FenceManager:
     def __init__(self):
@@ -971,7 +1047,6 @@ class FenceManager:
     def save_config(self):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(self.config_data, f, ensure_ascii=False, indent=4)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

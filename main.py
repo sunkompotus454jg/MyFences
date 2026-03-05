@@ -656,14 +656,14 @@ class FenceInstance(QWidget):
         menu.addMenu(manage_menu)
         menu.addSeparator()
         
-        lock_text = "🔓 Открепить сетку" if getattr(self, 'is_locked', False) else "🔒 Закрепить сетку"
+        lock_text = "Открепить сетку" if getattr(self, 'is_locked', False) else "Закрепить сетку"
         lock_action = menu.addAction(lock_text)
         lock_action.triggered.connect(self.toggle_lock)
         
-        fit_action = menu.addAction("📏 Заполнить свободное место")
+        fit_action = menu.addAction("Заполнить свободное место")
         fit_action.triggered.connect(self.auto_fit_horizontal)
         
-        search_action = menu.addAction("🔍 Поиск иконок")
+        search_action = menu.addAction("Поиск иконок")
         search_action.triggered.connect(self.toggle_search)
         menu.addSeparator()
 
